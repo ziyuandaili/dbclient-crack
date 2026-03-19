@@ -13,7 +13,6 @@ import os
 import re
 import sys
 import shutil
-import platform
 from pathlib import Path
 
 # 配置部分
@@ -32,35 +31,52 @@ class PatchManager:
         self.extension_dirs = self._find_extension_dirs()
         self.extension_dir = None # current working target
         
+    # 明确排除的非编辑器隐藏目录（加速扫描、避免误报）
+    EXCLUDE_DIRS = {
+        '.npm', '.config', '.cache', '.local', '.ssh', '.git', '.gitconfig',
+        '.docker', '.cargo', '.rustup', '.nvm', '.pyenv', '.volta',
+        '.rbenv', '.gem', '.gradle', '.m2', '.pub-cache', '.cocoapods',
+        '.Trash', '.bash_sessions', '.zsh_sessions', '.oh-my-zsh',
+        '.gnupg', '.cups', '.oracle_jre_usage', '.DS_Store',
+        '.CFUserTextEncoding', '.lesshst', '.node_repl_history',
+    }
+
     def _find_extension_dirs(self):
-        """尝试自动查找所有已安装的扩展目录"""
+        """自动扫描用户 home 目录下所有 VSCode 系编辑器的插件目录"""
         home = Path.home()
-        system = platform.system()
         
-        # 支持的编辑器扩展路径 (VSCode, Cursor, Antigravity 等)
-        possible_paths = [
-            # VSCode
-            home / ".vscode" / "extensions",
-            home / ".vscode-server" / "extensions", 
-            # Cursor
-            home / ".cursor" / "extensions",
-            home / ".cursor-server" / "extensions",
-            # Antigravity (User Requested)
-            home / ".antigravity" / "extensions",
-            home / ".antigravity-server" / "extensions",
-        ]
-        
-        print("正在搜索所有支持的编辑器插件目录...")
+        print("正在自动扫描所有 VSCode 系编辑器的插件目录...")
         found_dirs = []
+        found_editors = set()
         
-        for base_path in possible_paths:
-            if not base_path.exists():
+        try:
+            entries = sorted(home.iterdir())
+        except PermissionError:
+            entries = []
+        
+        for entry in entries:
+            # 只关注隐藏目录
+            if not entry.name.startswith('.') or not entry.is_dir():
                 continue
-            # 查找匹配名称的文件夹（处理版本号不同的情况）
-            for d in base_path.iterdir():
-                if d.is_dir() and d.name.startswith(TARGET_EXTENSION_NAME):
-                    print(f"   => 发现目标: {d}")
-                    found_dirs.append(d)
+            # 跳过已知的非编辑器目录
+            if entry.name in self.EXCLUDE_DIRS:
+                continue
+            
+            # 检查 extensions 子目录
+            ext_path = entry / "extensions"
+            if not ext_path.exists() or not ext_path.is_dir():
+                continue
+            
+            # 在 extensions 目录中查找目标插件
+            try:
+                for d in ext_path.iterdir():
+                    if d.is_dir() and d.name.startswith(TARGET_EXTENSION_NAME):
+                        editor_name = entry.name.lstrip('.')
+                        print(f"   => 发现目标 [{editor_name}]: {d}")
+                        found_dirs.append(d)
+                        found_editors.add(editor_name)
+            except PermissionError:
+                continue
         
         # 如果自动查找失败，尝试使用当前目录
         if not found_dirs:
@@ -74,7 +90,8 @@ class PatchManager:
             print("请确认插件已安装，或将脚本放置在插件根目录下运行。")
             sys.exit(1)
             
-        print(f"✅ 共找到 {len(found_dirs)} 个安装位置")
+        editors_str = ", ".join(sorted(found_editors)) if found_editors else "当前目录"
+        print(f"✅ 共找到 {len(found_dirs)} 个安装位置 (编辑器: {editors_str})")
         return found_dirs
 
     def backup_file(self, file_path: Path):

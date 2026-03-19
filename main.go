@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"time"
 )
@@ -41,6 +40,15 @@ func logError(format string, a ...interface{}) {
 
 // --- 核心逻辑 ---
 
+// 明确排除的非编辑器隐藏目录（加速扫描、避免误报）
+var excludeDirs = map[string]bool{
+	".npm": true, ".config": true, ".cache": true, ".local": true, ".ssh": true, ".git": true,
+	".docker": true, ".cargo": true, ".rustup": true, ".nvm": true, ".pyenv": true, ".volta": true,
+	".rbenv": true, ".gem": true, ".gradle": true, ".m2": true, ".pub-cache": true, ".cocoapods": true,
+	".Trash": true, ".bash_sessions": true, ".zsh_sessions": true, ".oh-my-zsh": true,
+	".gnupg": true, ".cups": true, ".oracle_jre_usage": true,
+}
+
 func findExtensionDirs(customPath string) ([]string, error) {
 	if customPath != "" {
 		return []string{customPath}, nil
@@ -50,39 +58,44 @@ func findExtensionDirs(customPath string) ([]string, error) {
 		return nil, err
 	}
 
-	searchPaths := []string{}
-	// Common paths for all OS
-	commonPaths := []string{
-		filepath.Join(homeDir, ".vscode", "extensions"),
-		// Cursor
-		filepath.Join(homeDir, ".cursor", "extensions"),
-		// Antigravity
-		filepath.Join(homeDir, ".antigravity", "extensions"),
-	}
-	searchPaths = append(searchPaths, commonPaths...)
+	logInfo("正在自动扫描所有 VSCode 系编辑器的插件目录...")
 
-	if runtime.GOOS == "windows" {
-		// Windows specific additional paths if any
-		searchPaths = append(searchPaths, filepath.Join(homeDir, ".cursor-server", "extensions"))
-	} else {
-		// Linux/Mac specific
-		searchPaths = append(searchPaths, filepath.Join(homeDir, ".vscode-server", "extensions"))
-		searchPaths = append(searchPaths, filepath.Join(homeDir, ".cursor-server", "extensions"))
-		searchPaths = append(searchPaths, filepath.Join(homeDir, ".antigravity-server", "extensions"))
+	homeEntries, err := os.ReadDir(homeDir)
+	if err != nil {
+		return nil, fmt.Errorf("无法读取用户目录: %v", err)
 	}
 
 	foundDirs := []string{}
-	for _, basePath := range searchPaths {
-		entries, err := os.ReadDir(basePath)
+	editorsFound := map[string]bool{}
+
+	for _, homeEntry := range homeEntries {
+		name := homeEntry.Name()
+		// 只关注隐藏目录
+		if !strings.HasPrefix(name, ".") || !homeEntry.IsDir() {
+			continue
+		}
+		// 跳过已知的非编辑器目录
+		if excludeDirs[name] {
+			continue
+		}
+
+		// 检查 extensions 子目录
+		extPath := filepath.Join(homeDir, name, "extensions")
+		entries, err := os.ReadDir(extPath)
 		if err != nil {
 			continue
 		}
+
 		for _, entry := range entries {
 			if entry.IsDir() && strings.HasPrefix(entry.Name(), TargetExtensionName) {
-				foundDirs = append(foundDirs, filepath.Join(basePath, entry.Name()))
+				editorName := strings.TrimPrefix(name, ".")
+				logInfo("   => 发现目标 [%s]: %s", editorName, filepath.Join(extPath, entry.Name()))
+				foundDirs = append(foundDirs, filepath.Join(extPath, entry.Name()))
+				editorsFound[editorName] = true
 			}
 		}
 	}
+
 	// 尝试当前目录
 	if _, err := os.Stat("package.json"); err == nil {
 		if _, err := os.Stat("out"); err == nil {
@@ -90,10 +103,20 @@ func findExtensionDirs(customPath string) ([]string, error) {
 			foundDirs = append(foundDirs, cwd)
 		}
 	}
-	
+
 	if len(foundDirs) == 0 {
 		return nil, fmt.Errorf("未自动找到任何插件目录，请使用 -path 参数指定")
 	}
+
+	// 输出发现的编辑器列表
+	editors := []string{}
+	for e := range editorsFound {
+		editors = append(editors, e)
+	}
+	if len(editors) > 0 {
+		logInfo("发现的编辑器: %s", strings.Join(editors, ", "))
+	}
+
 	return foundDirs, nil
 }
 
