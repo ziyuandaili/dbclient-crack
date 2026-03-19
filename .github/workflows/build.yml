@@ -53,6 +53,12 @@ jobs:
           go-version: '1.22' # 或者使用 'stable'
           check-latest: true
 
+      - name: Init Go module
+        run: |
+          if [ ! -f go.mod ]; then
+            go mod init dbclient-patcher
+          fi
+
       - name: Build binary
         env:
           GOOS: ${{ matrix.goos }}

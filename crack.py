@@ -260,7 +260,7 @@ class PatchManager:
             self.process_package_json()
             
         print("-" * 50)
-        print("🎉 所有操作完成！请重启相应的编辑器 (VSCode/Cursor/Antigravity)。")
+        print("🎉 所有操作完成！请重启对应的编辑器以生效。")
         print("💡 提示: 如果之前打开过 Database Client，请按 F1 -> 'Developer: Reload Window' 刷新。")
 
 if __name__ == '__main__':

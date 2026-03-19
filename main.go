@@ -275,7 +275,7 @@ func main() {
 	}
 
 	fmt.Println("-------------------------------------------")
-	logInfo("操作完成！请重启相应的编辑器 (VSCode/Cursor/Antigravity)")
+	logInfo("操作完成！请重启对应的编辑器以生效。")
 	pause()
 }
 
